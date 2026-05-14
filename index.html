@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Obsidian Gravity Graph</title>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: Inter, sans-serif;
+    }
+
+    body {
+        overflow: hidden;
+        background: #f4f6f8;
+        color: #111;
+    }
+
+    #container {
+        display: flex;
+        width: 100vw;
+        height: 100vh;
+    }
+
+    #sidebar {
+        width: 320px;
+        background: white;
+        border-right: 1px solid #ddd;
+        padding: 20px;
+        overflow-y: auto;
+        box-shadow: 4px 0 20px rgba(0,0,0,0.04);
+        z-index: 10;
+    }
+
+    #sidebar h1 {
+        font-size: 22px;
+        margin-bottom: 20px;
+    }
+
+    .control {
+        margin-bottom: 22px;
+    }
+
+    .control label {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    .control input {
+        width: 100%;
+    }
+
+    .value {
+        margin-top: 4px;
+        font-size: 13px;
+        color: #666;
+    }
+
+    button {
+        width: 100%;
+        padding: 14px;
+        border: none;
+        border-radius: 12px;
+        background: #111;
+        color: white;
+        font-weight: 600;
+        cursor: pointer;
+        transition: 0.2s;
+    }
+
+    button:hover {
+        transform: translateY(-1px);
+        opacity: 0.92;
+    }
+
+    #graph {
+        flex: 1;
+        position: relative;
+    }
+
+    svg {
+        width: 100%;
+        height: 100%;
+        background:
+            radial-gradient(circle at center, #ffffff 0%, #eef2f7 100%);
+    }
+
+    .link {
+        stroke: rgba(120,120,120,0.25);
+        stroke-width: 1.2px;
+    }
+
+    .node {
+        cursor: grab;
+        stroke: white;
+        stroke-width: 1.5px;
+    }
+
+    .node:hover {
+        stroke: #000;
+        stroke-width: 2px;
+    }
+
+    .label {
+        font-size: 11px;
+        fill: #333;
+        pointer-events: none;
+        user-select: none;
+    }
+
+    .section-title {
+        margin-top: 30px;
+        margin-bottom: 10px;
+        font-size: 13px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #666;
+    }
+
+</style>
+</head>
+<body>
+
+<div id="container">
+
+    <div id="sidebar">
+
+        <h1>Graph Controls</h1>
+
+        <div class="control">
+            <label>Node Count</label>
+            <input type="range" min="10" max="400" value="120" id="nodeCount">
+            <div class="value" id="nodeCountVal">120</div>
+        </div>
+
+        <div class="control">
+            <label>Link Density</label>
+            <input type="range" min="1" max="8" value="2" id="linkDensity">
+            <div class="value" id="linkDensityVal">2</div>
+        </div>
+
+        <div class="section-title">Physics</div>
+
+        <div class="control">
+            <label>Repulsion Force</label>
+            <input type="range" min="-500" max="-10" value="-120" id="chargeForce">
+            <div class="value" id="chargeForceVal">-120</div>
+        </div>
+
+        <div class="control">
+            <label>Center Gravity</label>
+            <input type="range" min="0" max="1" step="0.01" value="0.08" id="gravity">
+            <div class="value" id="gravityVal">0.08</div>
+        </div>
+
+        <div class="control">
+            <label>Link Distance</label>
+            <input type="range" min="10" max="300" value="70" id="linkDistance">
+            <div class="value" id="linkDistanceVal">70</div>
+        </div>
+
+        <div class="control">
+            <label>Collision Radius</label>
+            <input type="range" min="1" max="30" value="7" id="collision">
+            <div class="value" id="collisionVal">7</div>
+        </div>
+
+        <div class="control">
+            <label>Node Size</label>
+            <input type="range" min="2" max="20" value="5" id="nodeSize">
+            <div class="value" id="nodeSizeVal">5</div>
+        </div>
+
+        <div class="control">
+            <label>Simulation Speed</label>
+            <input type="range" min="0.001" max="1" step="0.001" value="0.3" id="alpha">
+            <div class="value" id="alphaVal">0.3</div>
+        </div>
+
+        <button id="regenBtn">Regenerate Universe</button>
+
+    </div>
+
+    <div id="graph">
+        <svg></svg>
+    </div>
+
+</div>
+
+<script>
+
+const svg = d3.select("svg");
+const width = window.innerWidth - 320;
+const height = window.innerHeight;
+
+let simulation;
+let nodeElements;
+let linkElements;
+let labelElements;
+
+function randomColor() {
+    const palette = [
+        "#4F46E5",
+        "#2563EB",
+        "#0EA5E9",
+        "#10B981",
+        "#F59E0B",
+        "#EF4444",
+        "#8B5CF6"
+    ];
+
+    return palette[Math.floor(Math.random() * palette.length)];
+}
+
+function generateGraph() {
+
+    svg.selectAll("*").remove();
+
+    const nodeCount = +document.getElementById("nodeCount").value;
+    const density = +document.getElementById("linkDensity").value;
+    const chargeForce = +document.getElementById("chargeForce").value;
+    const gravity = +document.getElementById("gravity").value;
+    const linkDistance = +document.getElementById("linkDistance").value;
+    const collision = +document.getElementById("collision").value;
+    const nodeSize = +document.getElementById("nodeSize").value;
+    const alpha = +document.getElementById("alpha").value;
+
+    const nodes = Array.from({ length: nodeCount }, (_, i) => ({
+        id: i,
+        label: `Node ${i}`,
+        color: randomColor()
+    }));
+
+    const links = [];
+
+    for (let i = 0; i < nodeCount * density; i++) {
+        links.push({
+            source: Math.floor(Math.random() * nodeCount),
+            target: Math.floor(Math.random() * nodeCount)
+        });
+    }
+
+    simulation = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(links)
+            .id(d => d.id)
+            .distance(linkDistance))
+        .force("charge", d3.forceManyBody()
+            .strength(chargeForce))
+        .force("center", d3.forceCenter(width / 2, height / 2))
+        .force("collision", d3.forceCollide(collision))
+        .force("x", d3.forceX(width / 2).strength(gravity))
+        .force("y", d3.forceY(height / 2).strength(gravity))
+        .alpha(alpha);
+
+    linkElements = svg.append("g")
+        .selectAll("line")
+        .data(links)
+        .enter()
+        .append("line")
+        .attr("class", "link");
+
+    nodeElements = svg.append("g")
+        .selectAll("circle")
+        .data(nodes)
+        .enter()
+        .append("circle")
+        .attr("class", "node")
+        .attr("r", nodeSize)
+        .attr("fill", d => d.color)
+        .call(
+            d3.drag()
+                .on("start", dragStarted)
+                .on("drag", dragged)
+                .on("end", dragEnded)
+        );
+
+    labelElements = svg.append("g")
+        .selectAll("text")
+        .data(nodes)
+        .enter()
+        .append("text")
+        .attr("class", "label")
+        .text(d => d.label);
+
+    simulation.on("tick", () => {
+
+        linkElements
+            .attr("x1", d => d.source.x)
+            .attr("y1", d => d.source.y)
+            .attr("x2", d => d.target.x)
+            .attr("y2", d => d.target.y);
+
+        nodeElements
+            .attr("cx", d => d.x)
+            .attr("cy", d => d.y);
+
+        labelElements
+            .attr("x", d => d.x + 8)
+            .attr("y", d => d.y + 4);
+
+    });
+
+}
+
+function dragStarted(event, d) {
+    if (!event.active) simulation.alphaTarget(0.3).restart();
+    d.fx = d.x;
+    d.fy = d.y;
+}
+
+function dragged(event, d) {
+    d.fx = event.x;
+    d.fy = event.y;
+}
+
+function dragEnded(event, d) {
+    if (!event.active) simulation.alphaTarget(0);
+    d.fx = null;
+    d.fy = null;
+}
+
+document.querySelectorAll("input").forEach(input => {
+
+    const val = document.getElementById(input.id + "Val");
+
+    input.addEventListener("input", () => {
+        val.textContent = input.value;
+    });
+
+});
+
+document.getElementById("regenBtn")
+    .addEventListener("click", generateGraph);
+
+window.addEventListener("resize", () => {
+    generateGraph();
+});
+
+generateGraph();
+
+</script>
+
+</body>
+</html>
