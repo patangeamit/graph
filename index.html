@@ -76,7 +76,7 @@ const dirPathInput=$("dirPath");
 const submitBtn=$("submitBtn");
 const ignoreEnvAndDotInput=$("ignoreEnvAndDot");
 const statusEl=$("status");
-const API_BASE=location.protocol==="file:" || (location.hostname==="localhost" && location.port && location.port!=="3000")
+const API_BASE=location.protocol==="file:" || location.port!=="3000"
   ? "http://localhost:3000"
   : "";
 

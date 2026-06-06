@@ -4,7 +4,7 @@ const path = require("path");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
-const MAX_NODES = Number(process.env.MAX_NODES || 1500);
+const MAX_NODES = Number(process.env.MAX_NODES || 5000);
 const FRONTEND_DIR = path.resolve(__dirname, "..");
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const VENV_NAMES = new Set(["venv", "env", "virtualenv", ".venv"]);
@@ -23,6 +23,10 @@ app.use((req, res, next) => {
 
 app.use(express.json({limit: "1mb"}));
 app.use(express.static(FRONTEND_DIR));
+
+app.get("/health", (req, res) => {
+  res.json({ok: true, port: PORT});
+});
 
 function shouldIgnoreEntry(name, ignoreEnvAndDot) {
   if (!ignoreEnvAndDot) return false;
@@ -131,6 +135,10 @@ app.post("/api/graph", async (req, res) => {
     const statusCode = err.statusCode || (err.code === "ENOENT" ? 404 : 500);
     res.status(statusCode).json({error: err.message});
   }
+});
+
+app.get("/api/graph", (req, res) => {
+  res.status(405).json({error: "Use POST /api/graph with a JSON body containing dirPath"});
 });
 
 app.get("*", (req, res) => {
