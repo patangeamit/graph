@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Gravity Graph</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<style>
+:root{--bg:#f4f6f8;--panel:#fff;--border:#d9d9d9;--text:#111;--muted:#666;--link:rgba(80,80,80,0.22);--shadow:rgba(0,0,0,0.05);--g1:#fff;--g2:#eef2f7}
+body.dark{--bg:#0f1115;--panel:#171a21;--border:#2a2f3a;--text:#f5f7fa;--muted:#a0a7b4;--link:rgba(255,255,255,0.12);--shadow:rgba(0,0,0,0.3);--g1:#101319;--g2:#1a1f28}
+*{margin:0;padding:0;box-sizing:border-box;font-family:Inter,sans-serif}
+body{overflow:hidden;background:var(--bg);color:var(--text);transition:background .25s}
+#container{display:flex;width:100vw;height:100vh}
+#sidebar{width:300px;background:var(--panel);border-right:1px solid var(--border);padding:16px;overflow-y:auto;box-shadow:4px 0 20px var(--shadow);z-index:10}
+#sidebar h1{font-size:18px;margin-bottom:16px;font-weight:600}
+.ctrl{margin-bottom:14px}
+.ctrl label{display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px;font-weight:600}
+.ctrl label span{font-weight:400;color:var(--muted);font-size:12px}
+.ctrl input[type=range]{width:100%;accent-color:#4F46E5}
+.sec{margin:18px 0 8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}
+.row{display:flex;gap:8px;margin-bottom:16px}
+.row button{flex:1;border:1px solid var(--border);padding:9px 0;border-radius:8px;cursor:pointer;background:var(--panel);color:var(--text);font-size:13px;font-weight:600;transition:.15s}
+.row button:hover{background:var(--text);color:var(--bg)}
+.path-row{display:flex;gap:8px;margin-bottom:8px}
+.path-row input{min-width:0;flex:1;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);padding:9px 10px;font-size:13px;outline:none}
+.path-row input:focus{border-color:#4F46E5;box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+.path-row button{border:1px solid var(--border);padding:0 12px;border-radius:8px;cursor:pointer;background:var(--text);color:var(--bg);font-size:13px;font-weight:700;transition:.15s}
+.path-row button:hover{opacity:.82}
+.toggle-row{display:flex;align-items:center;gap:8px;margin:8px 0 10px;color:var(--text);font-size:13px;font-weight:600;cursor:pointer;user-select:none}
+.toggle-row input{width:16px;height:16px;accent-color:#4F46E5}
+.badge{font-size:11px;color:var(--muted);margin-top:4px}
+.status{min-height:28px;font-size:11px;line-height:1.35;color:var(--muted)}
+#graph{flex:1;position:relative}
+svg{width:100%;height:100%;background:radial-gradient(circle at center,var(--g1) 0%,var(--g2) 100%)}
+.link{stroke:var(--link);stroke-width:1px}
+.node{cursor:grab;stroke:rgba(255,255,255,0.6);stroke-width:1.2px}
+.node:active{cursor:grabbing}
+.label{font-size:10px;fill:var(--text);opacity:.7;pointer-events:none;user-select:none}
+#hud{position:absolute;bottom:12px;right:12px;font-size:11px;color:var(--muted);background:var(--panel);padding:6px 10px;border-radius:8px;border:1px solid var(--border)}
+</style>
+</head>
+<body>
+<div id="container">
+<div id="sidebar">
+  <h1>Graph Controls</h1>
+  <div class="row">
+    <button id="themeBtn">Light / Dark</button>
+    <button id="reheatBtn">Reheat</button>
+  </div>
+  <div class="sec">Directory</div>
+  <div class="path-row">
+    <input id="rootPath" type="text" placeholder="Root folder name or path">
+    <button id="loadDirBtn">Enter</button>
+  </div>
+  <label class="toggle-row">
+    <input id="ignoreEnvAndDot" type="checkbox" checked>
+    Ignore venv and dotfiles
+  </label>
+  <div class="status" id="dirStatus">Enter a root label, then choose the folder when the browser asks.</div>
+  <div class="sec">Random Graph</div>
+  <div class="ctrl">
+    <label>Nodes <span id="nodeCountVal">120</span></label>
+    <input type="range" min="10" max="500" value="120" id="nodeCount">
+  </div>
+  <div class="ctrl">
+    <label>Link density <span id="linkDensityVal">2</span></label>
+    <input type="range" min="1" max="10" value="2" id="linkDensity">
+  </div>
+  <div class="badge">⚠ Changing nodes or density rebuilds the graph</div>
+  <div class="sec">Physics (live)</div>
+  <div class="ctrl">
+    <label>Repulsion <span id="chargeForceVal">-120</span></label>
+    <input type="range" min="-700" max="-10" value="-120" id="chargeForce">
+  </div>
+  <div class="ctrl">
+    <label>Gravity <span id="gravityVal">0.08</span></label>
+    <input type="range" min="0" max="1" step="0.01" value="0.08" id="gravity">
+  </div>
+  <div class="ctrl">
+    <label>Link distance <span id="linkDistanceVal">70</span></label>
+    <input type="range" min="10" max="300" value="70" id="linkDistance">
+  </div>
+  <div class="ctrl">
+    <label>Collision radius <span id="collisionVal">7</span></label>
+    <input type="range" min="1" max="40" value="7" id="collision">
+  </div>
+  <div class="sec">Visual</div>
+  <div class="ctrl">
+    <label>Node size <span id="nodeSizeVal">5</span></label>
+    <input type="range" min="2" max="20" value="5" id="nodeSize">
+  </div>
+  <div class="ctrl">
+    <label>Label threshold <span id="labelThreshVal">30</span></label>
+    <input type="range" min="0" max="500" value="30" id="labelThresh">
+  </div>
+</div>
+<div id="graph">
+  <svg></svg>
+  <div id="hud">nodes: <b id="hudN">0</b> · links: <b id="hudL">0</b> · scroll to zoom · drag to pan</div>
+</div>
+</div>
+
+<script>
+const PALETTE=["#4F46E5","#2563EB","#0EA5E9","#10B981","#F59E0B","#EF4444","#8B5CF6"];
+const rnd=()=>PALETTE[Math.floor(Math.random()*PALETTE.length)];
+const MAX_DIRECTORY_NODES=1500;
+
+const svg=d3.select("svg");
+const gLinks=svg.append("g");
+const gNodes=svg.append("g");
+const gLabels=svg.append("g");
+
+svg.call(d3.zoom().scaleExtent([0.05,8]).on("zoom",e=>{
+  gLinks.attr("transform",e.transform);
+  gNodes.attr("transform",e.transform);
+  gLabels.attr("transform",e.transform);
+}));
+
+let simulation=null;
+let nodes=[],links=[];
+let linksEl,nodesEl,labelsEl;
+
+const $=id=>document.getElementById(id);
+const nodeCountInput=$("nodeCount"),linkDensityInput=$("linkDensity");
+const chargeForceInput=$("chargeForce"),gravityInput=$("gravity");
+const linkDistanceInput=$("linkDistance"),collisionInput=$("collision");
+const nodeSizeInput=$("nodeSize"),labelThreshInput=$("labelThresh");
+const rootPathInput=$("rootPath"),loadDirBtn=$("loadDirBtn"),dirStatus=$("dirStatus");
+const ignoreEnvAndDotInput=$("ignoreEnvAndDot");
+
+function W(){return window.innerWidth-300}
+function H(){return window.innerHeight}
+
+function resetGraph(nextNodes,nextLinks){
+  if(simulation) simulation.stop();
+
+  nodes=nextNodes;
+  links=nextLinks;
+
+  $("hudN").textContent=nodes.length;
+  $("hudL").textContent=links.length;
+
+  gLinks.selectAll("*").remove();
+  gNodes.selectAll("*").remove();
+  gLabels.selectAll("*").remove();
+
+  linksEl=gLinks.selectAll("line").data(links).join("line").attr("class","link");
+
+  nodesEl=gNodes.selectAll("circle").data(nodes).join("circle")
+    .attr("class","node")
+    .attr("r",d=>d.kind==="directory"?+nodeSizeInput.value+2:+nodeSizeInput.value)
+    .attr("fill",d=>d.color)
+    .call(d3.drag()
+      .on("start",(e,d)=>{if(!e.active)simulation.alphaTarget(0.3).restart();d.fx=d.x;d.fy=d.y})
+      .on("drag",(e,d)=>{d.fx=e.x;d.fy=e.y})
+      .on("end",(e,d)=>{if(!e.active)simulation.alphaTarget(0);d.fx=null;d.fy=null})
+    );
+
+  nodesEl.append("title").text(d=>d.path || d.label || d.id);
+
+  labelsEl=gLabels.selectAll("text").data(nodes).join("text")
+    .attr("class","label")
+    .text(d=>d.label ?? `N${d.id}`);
+
+  updateLabelVisibility();
+
+  simulation=d3.forceSimulation(nodes)
+    .force("link",d3.forceLink(links).id(d=>d.id).distance(+linkDistanceInput.value))
+    .force("charge",d3.forceManyBody().strength(+chargeForceInput.value))
+    .force("center",d3.forceCenter(W()/2,H()/2))
+    .force("collision",d3.forceCollide().radius(d=>(d.kind==="directory"?+collisionInput.value+4:+collisionInput.value)))
+    .force("x",d3.forceX(W()/2).strength(+gravityInput.value))
+    .force("y",d3.forceY(H()/2).strength(+gravityInput.value))
+    .alphaDecay(0.02)
+    .on("tick",tick);
+}
+
+function buildGraph(){
+  const n=+nodeCountInput.value;
+  const d=+linkDensityInput.value;
+  const randomNodes=Array.from({length:n},(_,i)=>({id:i,label:`N${i}`,color:rnd()}));
+  const randomLinks=Array.from({length:n*d},()=>({
+    source:Math.floor(Math.random()*n),
+    target:Math.floor(Math.random()*n)
+  }));
+
+  resetGraph(randomNodes,randomLinks);
+}
+
+function tick(){
+  linksEl.attr("x1",d=>d.source.x).attr("y1",d=>d.source.y)
+         .attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);
+  nodesEl.attr("cx",d=>d.x).attr("cy",d=>d.y);
+  labelsEl.attr("x",d=>d.x+8).attr("y",d=>d.y+4);
+}
+
+function updateForces(){
+  if(!simulation) return;
+  simulation.force("charge").strength(+chargeForceInput.value);
+  simulation.force("link").distance(+linkDistanceInput.value);
+  simulation.force("collision").radius(d=>(d.kind==="directory"?+collisionInput.value+4:+collisionInput.value));
+  simulation.force("x").strength(+gravityInput.value);
+  simulation.force("y").strength(+gravityInput.value);
+  simulation.alpha(0.3).restart();
+}
+
+function updateLabelVisibility(){
+  if(!labelsEl) return;
+  const thresh=+labelThreshInput.value;
+  labelsEl.style("display",nodes.length<=thresh?null:"none");
+}
+
+function updateNodeSize(){
+  if(!nodesEl) return;
+  nodesEl.attr("r",d=>d.kind==="directory"?+nodeSizeInput.value+2:+nodeSizeInput.value);
+}
+
+function shouldIgnoreEntry(entry){
+  if(!ignoreEnvAndDotInput.checked) return false;
+  const name=entry.name.toLowerCase();
+  return name.startsWith(".") || name==="venv" || name==="env" || name==="virtualenv";
+}
+
+async function readDirectory(handle,parentId=null,basePath="",counter={count:0,skipped:0}){
+  const entries=[];
+  for await (const entry of handle.values()) entries.push(entry);
+  entries.sort((a,b)=>a.kind===b.kind?a.name.localeCompare(b.name):a.kind==="directory"?-1:1);
+
+  const rootLabel=rootPathInput.value.trim() || handle.name;
+  const currentPath=basePath || rootLabel;
+  const id=currentPath;
+  const directoryNode={id,label:basePath?handle.name:rootLabel,path:currentPath,kind:"directory",color:"#4F46E5"};
+  const directoryNodes=[directoryNode];
+  const directoryLinks=parentId?[{source:parentId,target:id}]:[];
+  counter.count++;
+
+  for(const entry of entries){
+    if(counter.count>=MAX_DIRECTORY_NODES) break;
+    if(shouldIgnoreEntry(entry)){
+      counter.skipped++;
+      continue;
+    }
+    const childPath=`${currentPath}/${entry.name}`;
+    if(entry.kind==="directory"){
+      const child=await readDirectory(entry,id,childPath,counter);
+      directoryNodes.push(...child.nodes);
+      directoryLinks.push(...child.links);
+    }else{
+      directoryNodes.push({id:childPath,label:entry.name,path:childPath,kind:"file",color:"#10B981"});
+      directoryLinks.push({source:id,target:childPath});
+      counter.count++;
+    }
+  }
+
+  return {nodes:directoryNodes,links:directoryLinks,skipped:counter.skipped};
+}
+
+async function loadDirectoryGraph(){
+  if(!window.showDirectoryPicker){
+    dirStatus.textContent="Directory access needs a Chromium-based browser over localhost or HTTPS.";
+    return;
+  }
+
+  loadDirBtn.disabled=true;
+  dirStatus.textContent="Waiting for folder permission...";
+
+  try{
+    const handle=await window.showDirectoryPicker();
+    if(!rootPathInput.value.trim()) rootPathInput.value=handle.name;
+    dirStatus.textContent="Reading folder...";
+    const graph=await readDirectory(handle);
+    resetGraph(graph.nodes,graph.links);
+    const capped=graph.nodes.length>=MAX_DIRECTORY_NODES?` Showing first ${MAX_DIRECTORY_NODES} items.`:"";
+    const skipped=graph.skipped?` Ignored ${graph.skipped} hidden/env items.`:"";
+    dirStatus.textContent=`Loaded ${graph.nodes.length} nodes from ${rootPathInput.value.trim()}.${skipped}${capped}`;
+  }catch(err){
+    if(err.name==="AbortError") dirStatus.textContent="Folder selection cancelled.";
+    else dirStatus.textContent=`Could not read folder: ${err.message}`;
+  }finally{
+    loadDirBtn.disabled=false;
+  }
+}
+
+const physicsInputs=[chargeForceInput,gravityInput,linkDistanceInput,collisionInput];
+const rebuildInputs=[nodeCountInput,linkDensityInput];
+
+physicsInputs.forEach(inp=>{
+  inp.addEventListener("input",()=>{
+    $(inp.id+"Val").textContent=inp.value;
+    updateForces();
+  });
+});
+
+rebuildInputs.forEach(inp=>{
+  inp.addEventListener("input",()=>{
+    $(inp.id+"Val").textContent=inp.value;
+    buildGraph();
+  });
+});
+
+nodeSizeInput.addEventListener("input",()=>{
+  $("nodeSizeVal").textContent=nodeSizeInput.value;
+  updateNodeSize();
+});
+
+labelThreshInput.addEventListener("input",()=>{
+  $("labelThreshVal").textContent=labelThreshInput.value;
+  updateLabelVisibility();
+});
+
+$("themeBtn").addEventListener("click",()=>document.body.classList.toggle("dark"));
+$("reheatBtn").addEventListener("click",()=>{if(simulation)simulation.alpha(0.8).restart()});
+$("loadDirBtn").addEventListener("click",loadDirectoryGraph);
+rootPathInput.addEventListener("keydown",e=>{
+  if(e.key==="Enter") loadDirectoryGraph();
+});
+
+window.addEventListener("resize",()=>{
+  if(!simulation) return;
+  simulation.force("center",d3.forceCenter(W()/2,H()/2));
+  simulation.force("x",d3.forceX(W()/2).strength(+gravityInput.value));
+  simulation.force("y",d3.forceY(H()/2).strength(+gravityInput.value));
+  simulation.alpha(0.1).restart();
+});
+
+buildGraph();
+</script>
+</body>
+</html>
